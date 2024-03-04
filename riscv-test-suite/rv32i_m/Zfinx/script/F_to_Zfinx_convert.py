@@ -6,23 +6,23 @@ import sys
 import argparse
 
 # Helper functions to convert F registers to X registers.
-def safeRegReplaceR1(r1: int, r2: int, r3: int) -> int:
+def safeRegReplaceR1(regLimit: int, r1: int, r2: int, r3: int) -> int:
     #check if r1 is overlappint system registers
     newReg = r1
-    if (r1 < 5):
-        newReg = 5 #set to smallest legal register
-        for i in range(5,31):
+    if (r1 <= regLimit):
+        newReg = regLimit + 1 #set to smallest legal register
+        for i in range(regLimit + 1,31):
             newReg = i
             if ((newReg != r2) & (newReg != r3)):
                 break
     return newReg
 
-def safeRegR4ReplaceR1(r1: int, r2: int, r3: int, r4: int) -> int:
+def safeRegR4ReplaceR1(regLimit: int, r1: int, r2: int, r3: int, r4: int) -> int:
     #check if r1 is overlappint system registers
     newReg = r1
-    if (r1 < 5):
-        newReg = 5 #set to smallest legal register
-        for i in range(5,31):
+    if (r1 <= regLimit):
+        newReg = regLimit + 1 #set to smallest legal register
+        for i in range(regLimit + 1,31):
             newReg = i
             if ((newReg != r2) & (newReg != r3) & (newReg != r4)):
                 break
@@ -79,6 +79,8 @@ for line in sourceFile:
         line = parseLine[0] + "(" + parseLine[1] + "(" + '.*I.*Zfinx.*);def TEST_CASE_1=True"' + "," + parseLine[3] + ")"
         #line = "RVTEST_ISA(" + "'RVTEST_CASE(0,"+'"//check ISA:=regex(.*I.*Zfinx.*);def TEST_CASE_1=True;"' + parseLine[-1]
 
+    # set the default Zfinx replacement register limit
+    regLimit = 7
     # do we match the floating point register to register opertion?
     # TEST_FPSR_OP( inst, destreg, freg, rm, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg)
     if (parseLine[0] == 'TEST_FPSR_OP'):
@@ -142,8 +144,8 @@ for line in sourceFile:
         if (parseLine[3].startswith('f')):
            reg1 = int(parseLine[3].replace('f',''))
         # as zfinx is reusing X regs ensure we are not hitting the reserved x0-x4
-        destreg = safeRegReplaceR1(destreg, reg1, 0)
-        reg1    = safeRegReplaceR1(reg1, destreg, 0)
+        destreg = safeRegReplaceR1(regLimit, destreg, reg1, 0)
+        reg1    = safeRegReplaceR1(regLimit, reg1, destreg, 0)
         # generate new function
         zfinx_function  = parseLine[0].replace("TEST", "TEST_ZFINX") + "(" + parseLine[1]
         # inject the new X register only parameters
@@ -171,9 +173,9 @@ for line in sourceFile:
         reg1 = int(parseLine[3].replace('f',''))
         reg2 = int(parseLine[4].replace('f',''))
         # as zfinx is reusing X regs ensure we are not hitting the reserved x0-x4
-        destreg = safeRegReplaceR1(destreg, reg1, reg2)
-        reg1    = safeRegReplaceR1(reg1, destreg, reg2)
-        reg2    = safeRegReplaceR1(reg2, reg1, destreg)
+        destreg = safeRegReplaceR1(regLimit, destreg, reg1, reg2)
+        reg1    = safeRegReplaceR1(regLimit, reg1, destreg, reg2)
+        reg2    = safeRegReplaceR1(regLimit, reg2, reg1, destreg)
         # generate new function
         zfinx_function  = parseLine[0].replace("TEST", "TEST_ZFINX") + "(" + parseLine[1]
         zfinx_function += ", x" + str(destreg) + ", x" + str(reg1) + ", x" + str(reg2)
@@ -198,10 +200,10 @@ for line in sourceFile:
         reg2 = int(parseLine[4].replace('f',''))
         reg3 = int(parseLine[5].replace('f',''))
         # as zfinx is reusing X regs ensure we are not hitting the reserved x0-x4
-        destreg = safeRegR4ReplaceR1(destreg, reg1, reg2, reg3)
-        reg1    = safeRegR4ReplaceR1(reg1, destreg, reg2, reg3)
-        reg2    = safeRegR4ReplaceR1(reg2, reg1, destreg, reg3)
-        reg3    = safeRegR4ReplaceR1(reg3, reg1, reg2, destreg)
+        destreg = safeRegR4ReplaceR1(regLimit, destreg, reg1, reg2, reg3)
+        reg1    = safeRegR4ReplaceR1(regLimit, reg1, destreg, reg2, reg3)
+        reg2    = safeRegR4ReplaceR1(regLimit, reg2, reg1, destreg, reg3)
+        reg3    = safeRegR4ReplaceR1(regLimit, reg3, reg1, reg2, destreg)
         # generate new function
         zfinx_function  = parseLine[0].replace("TEST", "TEST_ZFINX") + "(" + parseLine[1]
         zfinx_function += ", x" + str(destreg) + ", x" + str(reg1) + ", x" + str(reg2) + ", x" + str(reg3)
