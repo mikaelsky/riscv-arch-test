@@ -39,8 +39,7 @@ floatSQRTTests      = ["fsqrt_b1-01.S""fsqrt_b20-01.S","fsqrt_b2-01.S","fsqrt_b3
 # Setup basic Zfinx test suite
 if (args.verbose):
     print("Generating the basic test suite with FADD, FSUB, FCVT.S.W/WU, FCVT.W/WU.S, FMUL, FCLASS, FEQ/LE/LT, FMIN/MAX, FSGNJ")
-#zfinxTestList = floatAddTests + floatSubTests + floatConvertTests + floatMultTests + floatSystemTests + floatCompareTests + floatMinMaxTests + floatSignTests;
-zfinxTestList = floatAddTests + floatSubTests + floatConvertTests + floatMultTests + floatCompareTests + floatMinMaxTests + floatSignTests;
+zfinxTestList = floatAddTests + floatSubTests + floatConvertTests + floatMultTests + floatSystemTests + floatCompareTests + floatMinMaxTests + floatSignTests;
 
 # Are we adding fdiv tests?
 if ((args.gcc_no_fdiv) or (args.no_fdiv)):
