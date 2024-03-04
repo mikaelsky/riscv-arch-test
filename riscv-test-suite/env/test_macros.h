@@ -292,7 +292,28 @@
   CHK_OFFSET(_BR, SIGALIGN, 1)				;\
   SREG _F,offset(_BR)					;\
   .set offset,offset+SIGALIGN
- 
+
+/* RVTEST_SIGUPD_ZFINX(basereg, sigreg,flagreg,newoff)           */
+/* This macro is used to store the signature values of (32 & 64) F and D */
+/* teats which use TEST_(FPSR_OP, FPIO_OP, FPRR_OP, FPR4_OP) opcodes     */
+/* It stores both an Xreg and an Freg, first adjusting base & offset to  */
+/* to keep offset < 2048. SIGALIGN is set to the max(FREGWIDTH, REGWIDTH)*/
+/* _BR - Base Reg, _R - FReg, _F - Fstatus Xreg              */
+#define RVTEST_SIGUPD_ZFINX(_BR,_R,_F,...)          ;\
+  .if NARG(__VA_ARGS__) == 1                ;\
+     .set offset,_ARG1(__VA_OPT__(__VA_ARGS__,0))   ;\
+  .endif                        ;\
+  .if (offset&(SIGALIGN-1))!=0              ;\
+/* Throw warnings then modify offset to target */   ;\
+     .warning "Incorrect signature Offset Alignment."   ;\
+     .set offset, offset&(SIGALIGN-1)+SIGALIGN      ;\
+  .endif                        ;\
+  CHK_OFFSET(_BR, SIGALIGN, 0)              ;\
+  SREG _R,offset(_BR)                  ;\
+  CHK_OFFSET(_BR, SIGALIGN, 1)              ;\
+  SREG _F,offset(_BR)                   ;\
+  .set offset,offset+SIGALIGN
+
 /* RVTEST_SIGUPD_FID(basereg, sigreg,flagreg,newoff)			*/
 /* This macro stores the signature values of (32 & 64) F & D insts	*/
 /* which uses TEST_(FPID_OP, FCMP_OP) ops				*/
@@ -620,6 +641,16 @@ ADDI(swreg, swreg, RVMODEL_CBZ_BLOCKSIZE)
     RVTEST_SIGUPD_FID(swreg,destreg,flagreg)	;\
     RVMODEL_IO_ASSERT_GPR_EQ(testreg, destreg, correctval)
 
+#define TEST_CASE_ZFINX_F(testreg, destreg, correctval, swreg, flagreg, code... ) ;\
+    code                    ;\
+    RVTEST_SIGUPD_ZFINX(swreg,destreg,flagreg)  ;\
+    RVMODEL_IO_ASSERT_GPR_EQ(testreg, destreg, correctval)
+
+#define TEST_CASE_ZFINX_FID(testreg, destreg, correctval, swreg, flagreg, code... )   ;\
+    code; \
+    RVTEST_SIGUPD_FID(swreg,destreg,flagreg)    ;\
+    RVMODEL_IO_ASSERT_GPR_EQ(testreg, destreg, correctval)
+
 #define TEST_AUIPC(inst, destreg, correctval, imm, swreg, offset, testreg)	;\
     TEST_CASE(testreg, destreg, correctval, swreg, offset, \
       LA testreg, 1f			;\
@@ -633,6 +664,106 @@ ADDI(swreg, swreg, RVMODEL_CBZ_BLOCKSIZE)
     TEST_CASE(testreg, destreg, correctval, swreg, offset,	 ;\
       LI(reg, MASK_XLEN(val))		;\
       inst destreg, reg, SEXT_IMM(imm)	;\
+    )
+
+// Zfinx tests
+//Tests for floating-point instructions with a single register operand
+#define TEST_ZFINX_FPSR_OP( inst, destreg, reg, rm, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg) \
+    TEST_CASE_ZFINX_F(testreg, xdestreg, correctval, swreg, flagreg, \
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg, val_offset, testreg); \
+      LI(testreg, fcsr_val) ;\
+      csrw fcsr, testreg    ;\
+      inst destreg, reg, rm    ;\
+      csrr flagreg, fcsr    ;\
+    )
+
+//Tests for floating-point instructions with a single register operand
+//This variant does not take the rm field and set it while writing the instruction
+#define TEST_ZFINX_FPSR_OP_NRM( inst, destreg, reg, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg) \
+    TEST_CASE_ZFINX_F(testreg, destreg, correctval, swreg, flagreg,        \
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg, val_offset, testreg)   ;\
+      li testreg, fcsr_val; csrw fcsr, testreg  ;\
+      inst destreg, reg            ;\
+      csrr flagreg, fcsr            ;\
+    )
+    
+//Tests for floating-point instructions with a single register operand and integer destination register
+#define TEST_ZFINX_FPID_OP( inst, destreg, reg, rm, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg,load_instr) \
+    TEST_CASE_ZFINX_FID(testreg, destreg, correctval, swreg, flagreg,      \
+      LOAD_MEM_VAL(load_instr, valaddr_reg, reg, val_offset, testreg)  ;\
+      li testreg, fcsr_val; csrw fcsr, testreg  ;\
+      inst destreg, reg, rm            ;\
+      csrr flagreg, fcsr            ;\
+      )
+    
+//Tests for floating-point instructions with a single register operand and integer operand register
+#define TEST_ZFINX_FPIO_OP( inst, destreg, reg, rm, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg, load_instr) \
+    TEST_CASE_ZFINX_F(testreg, destreg, correctval, swreg, flagreg,        \
+      LOAD_MEM_VAL(load_instr, valaddr_reg, reg, val_offset, testreg)  ;\
+      li testreg, fcsr_val; csrw fcsr, testreg  ;\
+      inst destreg, reg, rm             ;\
+      csrr flagreg, fcsr            ;\
+    )
+
+//Tests for floating-point instructions with a single register operand and integer destination register
+//This variant does not take the rm field and set it while writing the instruction
+#define TEST_ZFINX_FPID_OP_NRM( inst, destreg, reg, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg) \
+    TEST_CASE_ZFINX_FID(testreg, destreg, correctval, swreg, flagreg,      \
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg, val_offset, testreg)   ;\
+      li testreg, fcsr_val; csrw fcsr, testreg  ;\
+      inst destreg, reg             ;\
+      csrr flagreg, fcsr            ;\
+      )
+    
+//Tests for floating-point instructions with a single register operand and integer operand register
+//This variant does not take the rm field and set it while writing the instruction
+#define TEST_ZFINX_FPIO_OP_NRM( inst, destreg, reg, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg, load_instr) \
+    TEST_CASE_ZFINX_F(testreg, destreg, correctval, swreg, flagreg,        \
+      LOAD_MEM_VAL(load_instr, valaddr_reg, reg, val_offset, testreg)  ;\
+      li testreg, fcsr_val; csrw fcsr, testreg  ;\
+      inst destreg, reg             ;\
+      csrr flagreg, fcsr            ;\
+
+//Tests for floating-point instructions with register-register operand
+//This variant does not take the rm field and set it while writing the instruction
+#define TEST_ZFINX_FPRR_OP_NRM(inst, destreg, reg1, reg2, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg) \
+    TEST_CASE_ZFINX_F(testreg, destreg, correctval, swreg, flagreg,            \
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg1, val_offset, testreg)      ;\
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg2, (val_offset+FREGWIDTH), testreg)  ;\
+      li testreg, fcsr_val; csrw fcsr, testreg  ;\
+      inst destreg, reg1, reg2        ;\
+      csrr flagreg, fcsr            ;\
+    )
+
+//Tests for floating-point instructions with register-register operand
+#define TEST_ZFINX_FPRR_OP(inst, destreg, reg1, reg2, rm, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg) \
+    TEST_CASE_ZFINX_F(testreg, destreg, correctval, swreg, flagreg,           \
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg1, val_offset, testreg)      ;\
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg2, (val_offset+REGWIDTH), testreg)  ;\
+      li testreg, fcsr_val; csrw fcsr, testreg  ;\
+      inst destreg, reg1, reg2, rm        ;\
+      csrr flagreg, fcsr            ;\
+    )
+
+//Tests for floating-point CMP instructions with register-register operand
+#define TEST_ZFINX_FCMP_OP(inst, destreg, reg1, reg2, fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg) \
+    TEST_CASE_ZFINX_FID(testreg, destreg, correctval, swreg, flagreg,          \
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg1, val_offset, testreg)      ;\
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg2, (val_offset+FREGWIDTH), testreg)  ;\
+      li testreg, fcsr_val; csrw fcsr, testreg  ;\
+      inst destreg, reg1, reg2        ;\
+      csrr flagreg, fcsr            ;\
+    )
+
+//Tests for floating-point R4 type instructions
+#define TEST_ZFINX_FPR4_OP(inst, destreg, reg1, reg2, reg3, rm , fcsr_val, correctval, valaddr_reg, val_offset, flagreg, swreg, testreg) \
+    TEST_CASE_ZFINX_F(testreg, destreg, correctval, swreg, flagreg,           \
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg1, val_offset, testreg)      ;\
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg2, (val_offset+FREGWIDTH), testreg)  ;\
+      LOAD_MEM_VAL(LREG, valaddr_reg, reg3, (val_offset+2*FREGWIDTH), testreg);\
+      li testreg, fcsr_val; csrw fcsr, testreg  ;\
+      inst destreg, reg1, reg2, reg3, rm ;\
+      csrr flagreg, fcsr            ;\
     )
 
 //Tests for floating-point instructions with a single register operand
